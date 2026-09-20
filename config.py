@@ -8,7 +8,7 @@ BOT_TOKEN = "8911118423:AAGYvL2yRQHj0M9r_zqg7bXBmJRb1Nfc19Y"
 OWNER_ID = 8007254305
 
 # ===== GITHUB =====
-GITHUB_TOKEN = "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"
+GITHUB_TOKEN = "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"
 GITHUB_REPO = "akhiislam01222-ctrl/udp-flood-tester"
 WORKFLOW_COUNT = 15
 
