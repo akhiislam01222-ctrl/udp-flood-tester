@@ -129,7 +129,8 @@ def register(app):
             "ip": s["ip"],
             "port": s["port"],
             "threads": threads,
-            "duration": s["duration"]
+            "duration": s["duration"],
+            "started_at": time.time()
         }
         state.watchdog_enabled = True
 
