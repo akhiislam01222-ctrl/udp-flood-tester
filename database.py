@@ -120,11 +120,19 @@ def all_attacks():
 def get_github_config():
     from config import GITHUB_TOKEN, GITHUB_REPO, WORKFLOW_COUNT
     cfg = load("config")
-    return cfg.get("github", {
-        "token": GITHUB_TOKEN,
-        "repo": GITHUB_REPO,
-        "count": WORKFLOW_COUNT
-    })
+    github = cfg.get("github", {})
+
+    # config.py এর token সবসময় priority পাবে
+    # database এ পুরানো token থাকলেও config.py এরটা override করবে
+    token = GITHUB_TOKEN or github.get("token", "")
+    repo  = GITHUB_REPO  or github.get("repo", "")
+    count = github.get("count", WORKFLOW_COUNT)
+
+    return {
+        "token": token,
+        "repo":  repo,
+        "count": count
+    }
 
 def save_github_config(token, repo, count):
     cfg = load("config")
