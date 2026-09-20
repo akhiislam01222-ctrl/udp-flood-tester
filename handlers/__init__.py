@@ -1,1 +1,1 @@
-# handlers/__init__.py — খালি
+# handlers/__init__.py

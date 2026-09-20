@@ -3,12 +3,19 @@ on:
   workflow_dispatch:
     inputs:
       target_ip:
+        description: 'Target IP address'
         required: true
       target_port:
+        description: 'Target port'
         required: true
       threads:
+        description: 'Number of threads'
         required: true
         default: '1000'
+      duration:
+        description: 'Duration in seconds'
+        required: true
+        default: '300'
 
 jobs:
   run:
@@ -25,3 +32,4 @@ jobs:
           TARGET_IP: ${{ github.event.inputs.target_ip }}
           TARGET_PORT: ${{ github.event.inputs.target_port }}
           THREADS: ${{ github.event.inputs.threads }}
+          DURATION: ${{ github.event.inputs.duration }}

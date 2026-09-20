@@ -2,6 +2,7 @@
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 def main_menu(is_admin=False, is_owner=False):
+    """Role-based menu — শুধু যার permission আছে সে সেই button দেখবে"""
     buttons = [
         [InlineKeyboardButton("🎯 Launch Attack", callback_data="launch"),
          InlineKeyboardButton("📊 Check Status", callback_data="status")],
@@ -9,13 +10,26 @@ def main_menu(is_admin=False, is_owner=False):
          InlineKeyboardButton("📜 Attack History", callback_data="history")],
         [InlineKeyboardButton("🎁 Referral System", callback_data="referral"),
          InlineKeyboardButton("👤 My Profile", callback_data="profile")],
-        [InlineKeyboardButton("👥 User Management", callback_data="users"),
-         InlineKeyboardButton("⚙️ Bot Settings", callback_data="settings")],
-        [InlineKeyboardButton("📈 Statistics", callback_data="stats"),
-         InlineKeyboardButton("📋 Activity Logs", callback_data="logs")],
-        [InlineKeyboardButton("👑 Owner Panel", callback_data="owner"),
-         InlineKeyboardButton("🔑 Token Management", callback_data="token")]
+        [InlineKeyboardButton("📈 Statistics", callback_data="stats")],
     ]
+
+    # Admin + Owner দেখবে
+    if is_admin or is_owner:
+        buttons.append([
+            InlineKeyboardButton("👥 User Management", callback_data="users"),
+            InlineKeyboardButton("📋 Activity Logs", callback_data="logs"),
+        ])
+        buttons.append([
+            InlineKeyboardButton("⚙️ Bot Settings", callback_data="settings"),
+        ])
+
+    # শুধু Owner দেখবে
+    if is_owner:
+        buttons.append([
+            InlineKeyboardButton("👑 Owner Panel", callback_data="owner"),
+            InlineKeyboardButton("🔑 Token Management", callback_data="token"),
+        ])
+
     return InlineKeyboardMarkup(buttons)
 
 def back_button(target="main_menu"):

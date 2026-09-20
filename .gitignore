@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+data/
+*.session
+*.session-journal
+.venv/
+venv/
