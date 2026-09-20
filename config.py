@@ -2,14 +2,14 @@
 import os
 
 # ===== TELEGRAM =====
-API_ID = 1234567
-API_HASH = "your_api_hash_here"
-BOT_TOKEN = "your_bot_token_here"
+API_ID = 30864848
+API_HASH = "47dceaee86036e75a7c3fe39576101db"
+BOT_TOKEN = "8911118423:AAGYvL2yRQHj0M9r_zqg7bXBmJRb1Nfc19Y"
 OWNER_ID = 8007254305
 
 # ===== GITHUB =====
-GITHUB_TOKEN = "ghp_your_token_here"
-GITHUB_REPO = "yourname/my-bot"
+GITHUB_TOKEN = "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"
+GITHUB_REPO = "akhiislam0122-ctrl/udp-flood-tester"
 WORKFLOW_COUNT = 15
 
 # ===== SERVER =====
