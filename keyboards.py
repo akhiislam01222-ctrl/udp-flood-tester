@@ -10,7 +10,8 @@ def main_menu(is_admin=False, is_owner=False):
          InlineKeyboardButton("📜 Attack History", callback_data="history")],
         [InlineKeyboardButton("🎁 Referral System", callback_data="referral"),
          InlineKeyboardButton("👤 My Profile", callback_data="profile")],
-        [InlineKeyboardButton("📈 Statistics", callback_data="stats")],
+        [InlineKeyboardButton("📈 Statistics", callback_data="stats"),
+         InlineKeyboardButton("🔍 Check IP", callback_data="check_ip")],
     ]
 
     # Admin + Owner দেখবে
