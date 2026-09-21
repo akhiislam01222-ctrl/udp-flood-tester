@@ -22,11 +22,12 @@ app = Client(
 )
 
 # ===== REGISTER HANDLERS =====
-from handlers import start, launch, status, stop, history
+from handlers import start, launch, status, stop, history, check
 from handlers import referral, profile, users, settings
 from handlers import statistics, logs, owner, token, callbacks
 
 start.register(app)
+check.register(app)
 launch.register(app)
 status.register(app)
 stop.register(app)
