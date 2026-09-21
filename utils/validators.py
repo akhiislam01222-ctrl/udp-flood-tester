@@ -25,48 +25,59 @@ def valid_duration(d):
         return False
 
 def check_ip_alive(ip, timeout=3):
-    """IP টা live আছে কিনা ping দিয়ে check"""
+    """IP reachable কিনা TCP connect দিয়ে check"""
     try:
-        param = "-n" if platform.system().lower() == "windows" else "-c"
-        result = subprocess.run(
-            ["ping", param, "3", "-W", str(timeout), ip],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            timeout=timeout + 2
-        )
-        return result.returncode == 0
+        # Common ports দিয়ে try করি
+        for port in [80, 443, 22, 53]:
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(timeout)
+                result = sock.connect_ex((ip, port))
+                sock.close()
+                if result in [0, 111, 61]:  # connected or refused = IP alive
+                    return True
+            except:
+                continue
+
+        # UDP ICMP fallback
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.settimeout(timeout)
+        sock.sendto(b'\x00' * 8, (ip, 7))
+        try:
+            sock.recvfrom(1024)
+            sock.close()
+            return True
+        except socket.timeout:
+            sock.close()
+            return True  # no ICMP unreachable = host likely up
+        except ConnectionRefusedError:
+            sock.close()
+            return True  # ICMP = host is responding
+
     except Exception:
-        return None  # None = check করা যায়নি
+        return None
 
 def check_udp_port(ip, port, timeout=3):
-    """
-    UDP port check:
-    - ICMP Port Unreachable পেলে → CLOSED
-    - Timeout হলে → OPEN বা FILTERED (firewall)
-    """
+    """UDP port open/filtered/closed"""
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.settimeout(timeout)
-        # ছোট packet পাঠাই
-        sock.sendto(b"\x00" * 8, (ip, port))
+        sock.sendto(b'\x00' * 8, (ip, port))
         try:
             sock.recvfrom(1024)
-            # Response পেলে → port open (UDP service আছে)
             sock.close()
             return "open"
         except socket.timeout:
-            # Timeout → open বা filtered
             sock.close()
             return "open_or_filtered"
         except ConnectionRefusedError:
-            # ICMP Port Unreachable → closed
             sock.close()
             return "closed"
-    except Exception as e:
+    except Exception:
         return "unknown"
 
 def check_tcp_port(ip, port, timeout=3):
-    """TCP port open কিনা (bonus check)"""
+    """TCP port open কিনা"""
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(timeout)
