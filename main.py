@@ -1,5 +1,6 @@
 # main.py
-from pyrogram import Client
+from pyrogram import Client, idle
+from pyrogram.errors import FloodWait
 import logging
 import asyncio
 import threading
@@ -146,10 +147,31 @@ def run_flask():
     flask_app.run(host='0.0.0.0', port=PORT)
 
 # ===== MAIN =====
+def run_bot():
+    """Start the Telegram client without repeatedly hammering auth on FloodWait."""
+    while True:
+        try:
+            app.start()
+            logger.info("✅ Telegram bot connected")
+            idle()
+            break
+        except FloodWait as exc:
+            wait_seconds = max(int(getattr(exc, "value", 0)), 1)
+            logger.error(
+                "Telegram rate limit reached during startup; "
+                "waiting %s seconds before retrying",
+                wait_seconds,
+            )
+            time.sleep(wait_seconds + 5)
+        finally:
+            if app.is_connected:
+                app.stop()
+
+
 if __name__ == "__main__":
     logger.info("🚀 Bot starting...")
     threading.Thread(target=run_flask, daemon=True).start()
     threading.Thread(target=start_watchdog, daemon=True).start()
     logger.info(f"👑 Owner: {OWNER_ID}")
     logger.info(f"⚙️ Workflows: {WORKFLOW_COUNT}")
-    app.run()
+    run_bot()

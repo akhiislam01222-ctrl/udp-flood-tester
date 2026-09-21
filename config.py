@@ -3,10 +3,11 @@ import os
 import base64
 
 # ===== TELEGRAM =====
-API_ID    = 30864848
-API_HASH  = "47dceaee86036e75a7c3fe39576101db"
-BOT_TOKEN = "8911118423:AAEO7A4O59_irg-baH5BT9wB2YOHzE6wE4Y"
-OWNER_ID  = 8007254305
+# Keep credentials out of source control and provide them via deployment secrets.
+API_ID    = int(os.getenv("API_ID", "0"))
+API_HASH  = os.getenv("API_HASH", "")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+OWNER_ID  = int(os.getenv("OWNER_ID", "0"))
 
 # ===== GITHUB =====
 # Set GITHUB_TOKEN environment variable in your deployment platform
